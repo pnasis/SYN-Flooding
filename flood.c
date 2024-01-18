@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: %s -d <destination_ip> -p <destination_port>\n", argv[0]);
         return 1;
     }
-    
+
     char buffer[PACKET_LEN];
     struct ipheader *ip = (struct ipheader *) buffer;
     struct tcpheader *tcp = (struct tcpheader *) (buffer + sizeof(struct ipheader));
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
 
         // Fill in the TCP header.
         tcp->tcp_sport = rand(); // Use random source port
-        tcp->tcp_dport = htons(DEST_PORT);
+        tcp->tcp_dport = htons(dest_port);
         tcp->tcp_seq = rand(); // Use random sequence #
         tcp->tcp_ack = 0; // Acknowledgment number
         tcp->tcp_offx2 = 0x50;
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
         ip->iph_ihl = 5; // Header length
         ip->iph_ttl = 50; // Time to live
         ip->iph_sourceip.s_addr = rand(); // Use a random IP address
-        ip->iph_destip.s_addr = inet_addr(DEST_IP);
+        ip->iph_destip.s_addr = inet_addr(dest_ip);
         ip->iph_protocol = IPPROTO_TCP; // The value is 6
         ip->iph_len = htons(sizeof(struct ipheader) + sizeof(struct tcpheader));
 
