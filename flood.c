@@ -11,9 +11,6 @@
 #define PACKET_LEN 4096
 #define TH_SYN 0x02
 
-#define DEST_IP "10.0.2.17"
-#define DEST_PORT 80
-
 /* IP Header */
 struct ipheader
 {
