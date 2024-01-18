@@ -57,15 +57,22 @@ struct pseudo_tcp
 };
 
 unsigned short calculate_tcp_checksum(struct ipheader *ip);
-
 unsigned short in_cksum(unsigned short *buf, int length);
-
 void send_raw_ip_packet(struct ipheader* ip);
 
 int main() {
+    if (argc != 5) {
+        fprintf(stderr, "Usage: %s -d <destination_ip> -p <destination_port>\n", argv[0]);
+        return 1;
+    }
+    
     char buffer[PACKET_LEN];
     struct ipheader *ip = (struct ipheader *) buffer;
     struct tcpheader *tcp = (struct tcpheader *) (buffer + sizeof(struct ipheader));
+
+    // Parse command line arguments
+    char *dest_ip = argv[2];
+    int dest_port = atoi(argv[4]);
 
     srand(time(0)); // Initialize the seed for random # generation.
     while(1) {
