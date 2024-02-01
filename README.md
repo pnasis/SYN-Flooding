@@ -15,7 +15,7 @@ A SYN flooding attack is a type of network-based attack that targets the TCP (Tr
 
 In a SYN flooding attack, the attacker sends a large number of SYN packets to a target server, but intentionally fails to complete the handshake by sending the final ACK. This causes the server to allocate resources and maintain half-open connections for each incoming SYN packet. Eventually, the server's resources are exhausted, leading to a denial of service as legitimate connection requests cannot be accommodated.
 
-***This program sends SYN packets to the specified destination (IP and port), with randomized source IP addresses and ports!***
+***This program sends SYN packets to the specified destination (IP and port), with randomized source IP address and port!***
 
 ## Usage
 
