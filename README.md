@@ -13,7 +13,7 @@ Users are advised to use this software in a lawful and ethical manner and to res
 ## Description
 A SYN flooding attack is a type of network-based attack that targets the TCP (Transmission Control Protocol) handshake process. In a typical TCP handshake, a client sends a SYN (synchronize) packet to initiate a connection, and the server responds with a SYN-ACK (synchronize-acknowledge) packet. The client then sends an ACK (acknowledge) packet to complete the handshake and establish a connection.
 
-In a SYN flooding attack, the attacker sends a large number of SYN packets to a target server, but intentionally fails to complete the handshake by sending the final ACK. This causes the server to allocate resources and maintain half-open connections for each incoming SYN packet. Eventually, the server's resources are exhausted, leading to a denial of service as legitimate connection requests cannot be accommodated.
+In a SYN flooding attack, the attacker sends a large number of SYN packets to a target server, but intentionally fails to complete the handshake by sending the final ACK. This causes the server to allocate resources and maintain half-open connections for each incoming SYN packet. Eventually, the server's resources are exhausted, leading to a Denial of Service (DoS) as legitimate connection requests cannot be accommodated.
 
 ***This program sends SYN packets to the specified destination (IP and port), with randomized source IP address and port!***
 
