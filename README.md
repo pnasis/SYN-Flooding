@@ -24,7 +24,7 @@ In a SYN flooding attack, the attacker sends a large number of SYN packets to a 
 gcc -Wall -o flood flood.c
 
 # To run the program
-sudo ./flood <interface> -d <destination_ip> -p <destination_port>
+sudo ./flood -i <interface> -d <destination_ip> -p <destination_port>
 ```
 
 ## Contributing
