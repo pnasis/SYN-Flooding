@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
     char *dest_ip = argv[4];
     int dest_port = atoi(argv[6]);
 
-    printf("Starting the SYN flooding attack from the %s interface...\n", interface);
+    printf("SYN flooding attack to %s from %s interface...\n", dest_ip, interface);
 
     srand(time(0)); // Initialize the seed for random # generation.
     while(1) {
